@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Discord Compress</title>
+<style>
+  :root {
+    --bg: #07070d;
+    --glass: rgba(255, 255, 255, 0.055);
+    --glass-hi: rgba(255, 255, 255, 0.09);
+    --rim: rgba(255, 255, 255, 0.11);
+    --text: #f5f5f7;
+    --muted: rgba(235, 235, 245, 0.55);
+    --faint: rgba(235, 235, 245, 0.3);
+    --accent: linear-gradient(135deg, #5865f2 0%, #7c5cf6 50%, #d658d6 100%);
+    --ok: #30d158;
+    --err: #ff453a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 -apple-system, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    display: flex; flex-direction: column;
+  }
+
+  /* glowing colour blobs the glass blurs over */
+  .orbs { position: fixed; inset: 0; z-index: -1; overflow: hidden; }
+  .orb { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .55; animation: drift 18s ease-in-out infinite alternate; }
+  .orb.a { width: 340px; height: 340px; background: #5865f2; top: -80px; left: -90px; }
+  .orb.b { width: 300px; height: 300px; background: #d658d6; top: 220px; right: -120px; animation-delay: -6s; opacity: .4; }
+  .orb.c { width: 260px; height: 260px; background: #22c3ee; bottom: -110px; left: 40px; animation-delay: -12s; opacity: .28; }
+  @keyframes drift { to { transform: translate(40px, 30px) scale(1.12); } }
+
+  .glass {
+    background: var(--glass);
+    backdrop-filter: blur(28px) saturate(170%);
+    border: 1px solid var(--rim);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 10px 30px rgba(0, 0, 0, .25);
+    border-radius: 20px;
+  }
+
+  /* title bar */
+  .titlebar { height: 44px; display: flex; align-items: center; padding: 0 16px; flex-shrink: 0; }
+  .lights { display: flex; gap: 8px; }
+  .light { width: 12px; height: 12px; border-radius: 50%; border: none; cursor: pointer; position: relative; }
+  .light.close { background: #ff5f57; }
+  .light.min { background: #febc2e; }
+  .light::after { position: absolute; inset: 0; display: grid; place-items: center; font: 700 9px/1 system-ui; color: rgba(0,0,0,.55); opacity: 0; }
+  .light.close::after { content: "×"; font-size: 11px; }
+  .light.min::after { content: "–"; }
+  .lights:hover .light::after { opacity: 1; }
+  .titlebar .title { flex: 1; text-align: center; font-size: 13px; font-weight: 600; color: var(--muted); margin-right: 44px; }
+
+  main { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 4px 22px 22px; min-height: 0; }
+
+  .hero { display: flex; align-items: center; gap: 14px; padding: 6px 2px 4px; }
+  .hero img { width: 56px; height: 56px; filter: drop-shadow(0 8px 18px rgba(124, 92, 246, .45)); }
+  .hero h1 { font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
+  .hero p { color: var(--muted); font-size: 13px; }
+
+  .drop {
+    padding: 22px; text-align: center; cursor: pointer;
+    transition: background .2s, border-color .2s, transform .2s;
+  }
+  .drop:hover { background: var(--glass-hi); }
+  .drop.over { background: rgba(124, 92, 246, .16); border-color: rgba(167, 139, 250, .6); transform: scale(1.015); }
+  .drop svg { width: 30px; height: 30px; margin-bottom: 8px; opacity: .85; }
+  .drop .big { font-size: 15px; font-weight: 600; }
+  .drop .small { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+
+  .label { font-size: 11.5px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; margin: 0 4px -6px; }
+
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); padding: 4px; position: relative; border-radius: 14px; }
+  .seg .thumb {
+    position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / 3);
+    border-radius: 10px; background: rgba(255, 255, 255, .14);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 2px 8px rgba(0, 0, 0, .3);
+    transition: transform .35s cubic-bezier(.3, 1.3, .5, 1);
+  }
+  .seg button {
+    position: relative; background: none; border: none; color: var(--muted); cursor: pointer;
+    padding: 8px 4px; font: inherit; border-radius: 10px; transition: color .2s;
+  }
+  .seg button b { display: block; font-size: 14px; color: inherit; }
+  .seg button span { font-size: 11px; }
+  .seg button.on { color: var(--text); }
+
+  .queue { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 2px; }
+  .queue::-webkit-scrollbar { width: 6px; }
+  .queue::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 3px; }
+  .empty { margin: auto; color: var(--faint); font-size: 13px; }
+
+  .item { padding: 12px 14px; border-radius: 16px; animation: pop .35s cubic-bezier(.3, 1.3, .5, 1); }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.98); } }
+  .item .row { display: flex; align-items: center; gap: 10px; }
+  .item .name { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .meta { color: var(--muted); font-size: 12px; margin-top: 2px; display: flex; justify-content: space-between; }
+  .item .meta .status.ok { color: var(--ok); }
+  .item .meta .status.err { color: var(--err); }
+  .bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); margin-top: 9px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 2px; transition: width .3s; }
+  .item.done .bar i { background: var(--ok); }
+  .icon-btn {
+    background: rgba(255,255,255,.08); border: 1px solid var(--rim); color: var(--text);
+    border-radius: 999px; font: 600 11.5px/1 inherit; padding: 5px 10px; cursor: pointer;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,.16); }
+  .x { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; }
+  .x:hover { color: var(--text); }
+
+  .go {
+    height: 48px; border: none; border-radius: 14px; cursor: pointer; flex-shrink: 0;
+    background: var(--accent); color: white; font: 600 15px/1 inherit;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 10px 26px rgba(124, 92, 246, .4);
+    transition: transform .15s, opacity .2s, filter .2s;
+  }
+  .go:hover { filter: brightness(1.1); }
+  .go:active { transform: scale(.98); }
+  .go:disabled { opacity: .35; cursor: default; filter: none; transform: none; }
+</style>
+</head>
+<body>
+  <div class="orbs"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+
+  <div class="titlebar pywebview-drag-region">
+    <div class="lights">
+      <button class="light close" title="Close" onclick="pywebview.api.close()"></button>
+      <button class="light min" title="Minimize" onclick="pywebview.api.minimize()"></button>
+    </div>
+    <div class="title">Discord Compress</div>
+  </div>
+
+  <main>
+    <div class="hero pywebview-drag-region">
+      <img src="logo.png" alt="">
+      <div>
+        <h1>Discord Compress</h1>
+        <p>Shrink clips to fit Discord's upload limit.</p>
+      </div>
+    </div>
+
+    <div class="drop glass" id="drop" onclick="pick()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 14v3.5A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5V14"/>
+      </svg>
+      <div class="big">Drop videos here</div>
+      <div class="small">or click to browse</div>
+    </div>
+
+    <div class="label">Target size</div>
+    <div class="seg glass" id="seg">
+      <div class="thumb"></div>
+      <button data-mb="10"><b>10 MB</b><span>Free</span></button>
+      <button data-mb="50"><b>50 MB</b><span>Nitro Basic</span></button>
+      <button data-mb="500"><b>500 MB</b><span>Nitro</span></button>
+    </div>
+
+    <div class="queue" id="queue"><div class="empty">No videos yet</div></div>
+
+    <button class="go" id="go" disabled onclick="start()">Compress</button>
+  </main>
+
+<script>
+  const files = new Map();   // path -> {info, el}
+  let target = 10, busy = false;
+
+  // size picker
+  const seg = document.getElementById('seg');
+  const segBtns = [...seg.querySelectorAll('button')];
+  function setTarget(mb) {
+    target = mb;
+    const i = segBtns.findIndex(b => +b.dataset.mb === mb);
+    segBtns.forEach((b, j) => b.classList.toggle('on', j === i));
+    seg.querySelector('.thumb').style.transform = `translateX(${i * 100}%)`;
+    try { localStorage.setItem('target', mb); } catch (e) {}
+  }
+  segBtns.forEach(b => b.onclick = () => !busy && setTarget(+b.dataset.mb));
+  let saved = 10;
+  try { saved = +localStorage.getItem('target') || 10; } catch (e) {}
+  setTarget([10, 50, 500].includes(saved) ? saved : 10);
+
+  // drag highlight (the drop itself is handled in Python, which gets the full paths)
+  const drop = document.getElementById('drop');
+  let depth = 0;
+  document.addEventListener('dragenter', e => { e.preventDefault(); depth++; drop.classList.add('over'); });
+  document.addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; drop.classList.remove('over'); } });
+  document.addEventListener('dragover', e => e.preventDefault());
+  document.addEventListener('drop', () => { depth = 0; drop.classList.remove('over'); });
+
+  function fmtTime(s) {
+    s = Math.round(s);
+    const m = Math.floor(s / 60), r = String(s % 60).padStart(2, '0');
+    return m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}:${r}` : `${m}:${r}`;
+  }
+  function fmtMB(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb.toFixed(mb < 10 ? 1 : 0) + ' MB'; }
+  function esc(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+  function render() {
+    const q = document.getElementById('queue');
+    if (!files.size) q.innerHTML = '<div class="empty">No videos yet</div>';
+    else q.querySelector('.empty')?.remove();
+    const pending = [...files.values()].some(f => !f.done);
+    document.getElementById('go').disabled = busy || !pending;
+  }
+
+  function addFiles(list) {
+    const q = document.getElementById('queue');
+    for (const info of list) {
+      if (files.has(info.path)) continue;
+      const el = document.createElement('div');
+      el.className = 'item glass';
+      el.innerHTML = `
+        <div class="row"><div class="name">${esc(info.name)}</div><button class="x" title="Remove">×</button></div>
+        <div class="meta"><span>${fmtMB(info.size_mb)}${info.duration ? ' · ' + fmtTime(info.duration) : ''}</span><span class="status"></span></div>
+        <div class="bar"><i></i></div>`;
+      el.querySelector('.x').onclick = () => { if (busy) return; files.delete(info.path); el.remove(); render(); };
+      files.set(info.path, { info, el, done: false });
+      if (!info.duration) setStatus(info.path, "Can't read this file", 'err', true);
+      q.appendChild(el);
+    }
+    render();
+  }
+
+  function setStatus(path, text, cls, done) {
+    const f = files.get(path); if (!f) return;
+    const s = f.el.querySelector('.status');
+    s.textContent = text; s.className = 'status ' + (cls || '');
+    if (done) f.done = true;
+  }
+
+  function onProgress(p) {
+    const f = files.get(p.path); if (!f) return;
+    f.el.querySelector('.bar i').style.width = p.pct + '%';
+    if (p.done) {
+      setStatus(p.path, p.ok ? `Done · ${fmtMB(p.out_mb)}` : p.status, p.ok ? 'ok' : 'err', true);
+      f.el.classList.toggle('done', p.ok);
+      if (p.ok) {
+        const btn = document.createElement('button');
+        btn.className = 'icon-btn'; btn.textContent = 'Show';
+        btn.onclick = () => pywebview.api.reveal(p.out);
+        f.el.querySelector('.x').replaceWith(btn);
+      }
+    } else {
+      setStatus(p.path, p.status);
+    }
+  }
+
+  function onAllDone() {
+    busy = false;
+    document.getElementById('go').textContent = 'Compress';
+    document.body.classList.remove('busy');
+    render();
+  }
+
+  async function pick() {
+    if (busy) return;
+    addFiles(await pywebview.api.pick_files());
+  }
+
+  function start() {
+    const todo = [...files.values()].filter(f => !f.done).map(f => f.info.path);
+    if (!todo.length) return;
+    busy = true;
+    document.getElementById('go').textContent = 'Compressing…';
+    render();
+    pywebview.api.start(todo, target);
+  }
+</script>
+</body>
+</html>
